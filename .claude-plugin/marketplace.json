@@ -1,0 +1,13 @@
+{
+	"name": "point-and-tell",
+	"owner": {
+		"name": "Romain Bourjot"
+	},
+	"plugins": [
+		{
+			"name": "point-and-tell",
+			"source": "./",
+			"description": "Point at elements of your running app in your own browser, write a note on each, press Go, and Claude addresses the whole batch."
+		}
+	]
+}

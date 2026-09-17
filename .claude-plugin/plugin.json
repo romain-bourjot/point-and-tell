@@ -1,0 +1,9 @@
+{
+	"name": "point-and-tell",
+	"description": "Point at elements of your running app in your own browser, write a note on each, press Go, and Claude addresses the whole batch.",
+	"version": "1.0.0",
+	"author": {
+		"name": "Romain Bourjot"
+	},
+	"keywords": ["ui", "review", "browser", "feedback", "frontend"]
+}
