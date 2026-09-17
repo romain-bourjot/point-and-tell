@@ -3,7 +3,7 @@
 	"version": "1.0.0",
 	"private": true,
 	"license": "CECILL-C",
-	"description": "Point at elements of your running app in your own browser, write a note on each, press Go, and Claude addresses the whole batch.",
+	"description": "Point at your live UI, tell what's wrong, agent fixes.",
 	"type": "module",
 	"scripts": {
 		"test": "node --test"
