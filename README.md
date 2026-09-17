@@ -132,5 +132,8 @@ suite is the same one CI runs.
 
 ## License
 
-No license has been declared yet. Until one is added, all rights are reserved
-by the author.
+Distributed under the
+[CeCILL-C Free Software License Agreement](LICENSE), version 1.0, a
+weak-copyleft license governed by French law and compatible with the LGPL.
+You may use it in any project; changes to point-and-tell itself must be
+shared under the same terms.
