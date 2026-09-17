@@ -34,14 +34,14 @@ Requires Node 18 or newer.
 From the marketplace, inside Claude Code:
 
 ```
-/plugin marketplace add romainbourjot/point-and-tell
+/plugin marketplace add romain-bourjot/point-and-tell
 /plugin install point-and-tell@point-and-tell
 ```
 
 From a local checkout:
 
 ```bash
-git clone https://github.com/romainbourjot/point-and-tell.git
+git clone https://github.com/romain-bourjot/point-and-tell.git
 ```
 
 ```
