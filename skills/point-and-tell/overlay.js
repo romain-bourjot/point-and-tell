@@ -8,6 +8,12 @@
 (() => {
 	const PREFIX = "point-and-tell";
 	const STORE = "point-and-tell-session";
+	// Every framework spells the same idea differently, and a project picks one:
+	// Testing Library and Playwright read `data-testid`, Cypress's own examples
+	// use `data-cy`, Vue Test Utils and much of the React world use `data-test`.
+	// The first one an element carries wins, so a project that uses two of them
+	// still gets the one it meant.
+	const ATTRS = LIVE.testAttributes;
 	const SKIP = new Set([
 		"HTML",
 		"HEAD",
@@ -116,8 +122,23 @@ white-space:nowrap;flex:1;min-width:0}
 
 	const route = () => location.pathname + location.search;
 
-	const nearestTestid = (el) =>
-		el.closest("[data-testid]")?.getAttribute("data-testid") ?? null;
+	// What this element itself is named by, and under which attribute — the name
+	// alone would send a grep looking for `data-testid` in a Cypress project.
+	const ownTestId = (node) => {
+		for (const attribute of ATTRS) {
+			const value = node.getAttribute(attribute);
+			if (value !== null) return { attribute, value };
+		}
+		return null;
+	};
+
+	const nearestTestId = (el) => {
+		for (let node = el; node !== null; node = node.parentElement) {
+			const found = ownTestId(node);
+			if (found !== null) return found;
+		}
+		return null;
+	};
 
 	const describe = (el) => {
 		const testids = [];
@@ -127,16 +148,20 @@ white-space:nowrap;flex:1;min-width:0}
 			node !== null && node !== document.body;
 			node = node.parentElement
 		) {
-			const testid = node.getAttribute("data-testid");
-			if (testid !== null) testids.unshift(testid);
+			const named = ownTestId(node);
+			if (named !== null) testids.unshift(named.value);
 			const slot = node.getAttribute("data-slot");
 			if (slot !== null && slots.length < 3) slots.push(slot);
 		}
+		const own = ownTestId(el);
+		const nearest = nearestTestId(el);
 		const rect = el.getBoundingClientRect();
 		return {
 			route: route(),
-			testid: testids.at(-1) ?? null,
-			ownTestid: el.getAttribute("data-testid"),
+			testid: nearest?.value ?? null,
+			testAttribute: nearest?.attribute ?? null,
+			ownTestid: own?.value ?? null,
+			ownTestAttribute: own?.attribute ?? null,
 			testids,
 			tag: el.tagName.toLowerCase(),
 			slots,
@@ -169,8 +194,9 @@ white-space:nowrap;flex:1;min-width:0}
 	const rebind = (note) => {
 		if (note.target.route !== route()) return null;
 		if (note.target.ownTestid === null) return null;
+		const attribute = note.target.ownTestAttribute ?? ATTRS[0];
 		const escaped = note.target.ownTestid.replace(/["\\]/g, "\\$&");
-		const found = document.querySelectorAll(`[data-testid="${escaped}"]`);
+		const found = document.querySelectorAll(`[${attribute}="${escaped}"]`);
 		return found.length === 1 ? found[0] : null;
 	};
 
@@ -245,7 +271,7 @@ white-space:nowrap;flex:1;min-width:0}
 			for (const note of state.notes) note.el = null;
 		}
 		place();
-		if (state.armed && hovered !== null && hovered.isConnected) {
+		if (state.armed && hovered?.isConnected) {
 			drawHighlight(hovered);
 		}
 		frame = window.requestAnimationFrame(tick);
@@ -369,7 +395,8 @@ white-space:nowrap;flex:1;min-width:0}
 				})),
 			}),
 		}).catch(() => null);
-		const body = response === null ? null : await response.json().catch(() => null);
+		const body =
+			response === null ? null : await response.json().catch(() => null);
 		if (body?.ok !== true) {
 			paintBar(`refused: ${body?.error ?? "helper unreachable"}`);
 			return;
@@ -391,10 +418,13 @@ white-space:nowrap;flex:1;min-width:0}
 		if (!state.armed || ours(event)) return;
 		hovered = pick(event.clientX, event.clientY);
 		drawHighlight(hovered);
+		const named = hovered === null ? null : nearestTestId(hovered);
 		hint.textContent =
 			hovered === null
 				? ""
-				: (nearestTestid(hovered) ?? `<${hovered.tagName.toLowerCase()}>`);
+				: named === null
+					? `<${hovered.tagName.toLowerCase()}>`
+					: `${named.attribute}="${named.value}"`;
 	};
 
 	const onClick = (event) => {
@@ -421,7 +451,11 @@ white-space:nowrap;flex:1;min-width:0}
 			paintBar();
 			return;
 		}
-		if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !editor.hidden) {
+		if (
+			event.key === "Enter" &&
+			(event.metaKey || event.ctrlKey) &&
+			!editor.hidden
+		) {
 			event.preventDefault();
 			save();
 		}

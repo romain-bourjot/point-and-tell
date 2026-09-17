@@ -22,6 +22,11 @@ localhost. `APP_URL` names its origin when it is not one of the usual dev ports 
 3000, 3001, 4200, 4321, 5000, 5173, 5174, 8000, 8080 on `localhost` and
 `127.0.0.1`. `LIVE_PORT` moves the helper off `:4488`.
 
+An element is named by whichever test attribute it carries — `data-testid`,
+`data-test-id`, `data-test`, `data-cy`, `data-qa`, `data-pw`, `data-e2e`,
+`data-automation-id`, in that order — and the note says which one it was.
+`TEST_ID_ATTRS` replaces that list for a project that names its own.
+
 Nothing is written into the repository: token, pid, log and batches live in a
 temporary directory keyed by the project's path, which `start` and `status`
 print. `LIVE_STATE_DIR` moves it.
@@ -46,7 +51,8 @@ thirty minutes:
 ```json
 {"type":"batch","id":"b1","sentAt":"2026-09-17T09:12:44.104Z","notes":[
   {"n":1,"note":"this button is too wide","route":"/orders?view=open",
-   "testid":"search-submit","testids":["orders","search","search-submit"],
+   "testid":"search-submit","testAttribute":"data-cy",
+   "testids":["orders","search","search-submit"],
    "tag":"button","text":"Search","rect":{"x":412,"y":233,"w":160,"h":44},"…":"…"}]}
 ```
 
@@ -70,7 +76,6 @@ without it the last one is assumed.
 | `status` | Helper, port, project, and every batch with its state — `WAITING FOR THE AGENT` is one nobody picked up. |
 | `stop` | Kills the helper. Batches on disk survive. |
 | `serve` | Runs the helper in the foreground, for reading its log live. |
-| `selftest` | Drives the whole loop headless against a fixture page. Needs Playwright and Chromium in the project. Exit code is non-zero if a check fails. |
 
 ## What a note carries
 
@@ -80,8 +85,9 @@ thing in the source. Per note: `n` (their numbering, and the number on the pin),
 
 - `route`, the `pathname` plus the query string, because `?view=open` is a screen
   of its own;
-- `testid`, the nearest `data-testid` at or above the element, `testids`, the
-  whole chain from `body` down, and `ownTestid`, the element's own or `null`;
+- `testid`, the nearest test id at or above the element, `testAttribute`, the
+  attribute it was written under, `testids`, the whole chain from `body` down,
+  and `ownTestid` / `ownTestAttribute`, the element's own or `null`;
 - `tag`, `classes`, `slots` (up to three `data-slot`, which name the design-system
   primitive in play), `role`, `ariaLabel`;
 - `text`, the first 200 characters it renders, and `outerHTML`, the first 1500;
@@ -92,8 +98,9 @@ thing in the source. Per note: `n` (their numbering, and the number on the pin),
 In this order, stopping at the first that lands:
 
 1. **`testid`, then `testids`.** Where the project uses test ids, one of them is
-   the element itself: `grep -rn 'data-testid="search-submit"' src` lands on it.
-   When the element carries none, the chain names the composition it sits in.
+   the element itself, and `testAttribute` says which spelling to grep for:
+   `grep -rn 'data-cy="search-submit"' src` lands on it. When the element carries
+   none, the chain names the composition it sits in.
 2. **`route`.** Map it through the router — a routes file, a file-system route,
    or a screen component named after it — to the one file that renders it.
 3. **`text`, in one or two hops.** A sentence rendered by a component is often

@@ -6,7 +6,7 @@
 //   node <skill>/live.mjs start
 //   node <skill>/live.mjs wait
 //   node <skill>/live.mjs report --text "…"
-//   node <skill>/live.mjs status | stop | serve | selftest
+//   node <skill>/live.mjs status | stop | serve
 
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
@@ -20,7 +20,6 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { createServer } from "node:http";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -58,6 +57,27 @@ const appOrigins =
 				.map((each) => each.trim().replace(/\/$/, ""))
 				.filter(Boolean);
 
+// What a project names its elements with. Testing Library and Playwright read
+// `data-testid`, Cypress's examples use `data-cy`, Vue Test Utils and much of the
+// React world use `data-test`; the overlay takes the first one an element
+// carries and says which it was, so the grep it suggests is the right one.
+// `TEST_ID_ATTRS` replaces the list for a project that names its own.
+const testAttributes =
+	process.env.TEST_ID_ATTRS === undefined
+		? [
+				"data-testid",
+				"data-test-id",
+				"data-test",
+				"data-cy",
+				"data-qa",
+				"data-pw",
+				"data-e2e",
+				"data-automation-id",
+			]
+		: process.env.TEST_ID_ATTRS.split(",")
+				.map((each) => each.trim())
+				.filter(Boolean);
+
 const origin = `http://127.0.0.1:${port}`;
 
 const usage = `point-and-tell — comment the running app, in batches
@@ -68,7 +88,6 @@ const usage = `point-and-tell — comment the running app, in batches
   status                 helper, port, batches
   stop                   kill the helper
   serve                  run the helper in the foreground
-  selftest               drive the whole loop headless, exit non-zero on failure
 `;
 
 const readToken = () => {
@@ -86,9 +105,9 @@ const bookmarklet = (token, at = origin) =>
 
 // ---------------------------------------------------------------- the helper
 
-const serve = ({ listenPort = port, quiet = false } = {}) => {
+export const serve = ({ listenPort = port, quiet = false } = {}) => {
 	const token = readToken();
-	// The port asked for is not always the port bound: the selftest asks for an
+	// The port asked for is not always the port bound: a test asks for an
 	// ephemeral one, and the overlay is served its own origin.
 	let bound = listenPort;
 	const batches = [];
@@ -218,6 +237,7 @@ const serve = ({ listenPort = port, quiet = false } = {}) => {
 			const head = `const LIVE = ${JSON.stringify({
 				token,
 				origin: `http://127.0.0.1:${bound}`,
+				testAttributes,
 			})};\n`;
 			response.end(head + overlay);
 			return;
@@ -371,14 +391,17 @@ else.</p>
 
 const fixturePage = (token) => `<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>point-and-tell selftest</title></head>
+<head><meta charset="utf-8"><title>point-and-tell fixture</title></head>
 <body>
 <main data-testid="fixture">
 <h1 data-testid="fixture-title">The title of the page</h1>
 <button type="button" data-testid="thing-one"
 style="width:160px;height:44px">First</button>
-<button type="button" data-testid="thing-two"
+<button type="button" data-cy="thing-two"
 style="width:160px;height:44px">Second</button>
+<button type="button" data-test="thing-three"
+style="width:160px;height:44px">Third</button>
+<button type="button" style="width:160px;height:44px">Nameless</button>
 </main>
 <script src="/overlay.js?token=${token}"></script>
 </body></html>
@@ -525,156 +548,27 @@ const stop = async () => {
 	console.log(killed ? `stopped ${pid}` : `${pid} was already gone`);
 };
 
-// ---------------------------------------------------------------- the check
-
-const selftest = async () => {
-	// Resolved from the project rather than from this file: the skill is installed
-	// outside the repository and has no node_modules of its own.
-	const require = createRequire(resolve(project, "package.json"));
-	const playwright = await (async () => {
-		for (const name of ["playwright", "@playwright/test"]) {
-			const where = (() => {
-				try {
-					return require.resolve(name);
-				} catch {
-					return null;
-				}
-			})();
-			if (where === null) continue;
-			const found = await import(where).catch(() => null);
-			// A CommonJS build arrives under `default`, an ESM one at the top.
-			const api = found?.chromium === undefined ? found?.default : found;
-			if (api?.chromium !== undefined) return api;
-		}
-		return null;
-	})();
-	if (playwright === null) {
-		console.error(
-			"selftest needs Playwright and Chromium in this project:\n" +
-				"  npm i -D playwright && npx playwright install chromium",
-		);
-		process.exit(1);
-	}
-	const running = await serve({ listenPort: 0, quiet: true });
-	const at = `http://127.0.0.1:${running.port}`;
-	const browser = await playwright.chromium.launch();
-	const page = await browser.newPage();
-	let failures = 0;
-	const expect = (label, condition, detail) => {
-		if (condition) {
-			console.log(`  ok   ${label}`);
-			return;
-		}
-		console.log(`  FAIL ${label} — ${JSON.stringify(detail)}`);
-		failures += 1;
-	};
-
-	await page.goto(`${at}/test?token=${running.token}`);
-	await page.locator("#point-and-tell-bar").waitFor();
-
-	const comment = async (testid, text) => {
-		await page.locator(`[data-testid="${testid}"]`).click();
-		await page.locator("#point-and-tell-text").fill(text);
-		await page.locator("#point-and-tell-save").click();
-	};
-
-	await comment("thing-one", "the first button is too wide");
-	await comment("thing-two", "the second one should be secondary");
-
-	expect(
-		"two notes are held before Go",
-		(await page.locator("#point-and-tell-count").textContent()) === "2 notes",
-		await page.locator("#point-and-tell-count").textContent(),
-	);
-
-	const claimed = fetch(`${at}/wait?timeout=20000&token=${running.token}`).then(
-		(response) => response.json(),
-	);
-	await page.locator("#point-and-tell-go").click();
-	const batch = await claimed;
-
-	expect("Go sends one batch of two notes", batch.notes?.length === 2, batch);
-	expect(
-		"a note carries its element's test id",
-		batch.notes?.[0]?.testid === "thing-one",
-		batch.notes?.[0],
-	);
-	expect(
-		"a note carries the ancestor test ids",
-		JSON.stringify(batch.notes?.[1]?.testids) ===
-			JSON.stringify(["fixture", "thing-two"]),
-		batch.notes?.[1]?.testids,
-	);
-	expect(
-		"a note carries what the person wrote",
-		batch.notes?.[1]?.note === "the second one should be secondary",
-		batch.notes?.[1]?.note,
-	);
-	// The route carries its query string, because `?view=review` is a screen.
-	expect(
-		"a note carries the route",
-		batch.notes?.[0]?.route?.startsWith("/test?token=") === true,
-		batch.notes?.[0]?.route,
-	);
-
-	await fetch(`${at}/report?token=${running.token}`, {
-		method: "POST",
-		headers: { "content-type": "text/plain" },
-		body: JSON.stringify({ id: batch.id, text: "two notes addressed" }),
-	});
-	await page
-		.locator("#point-and-tell-count", { hasText: "two notes addressed" })
-		.waitFor({ timeout: 10000 })
-		.catch(() => null);
-	expect(
-		"the report reaches the bar",
-		(await page.locator("#point-and-tell-count").textContent())?.includes(
-			"two notes addressed",
-		),
-		await page.locator("#point-and-tell-count").textContent(),
-	);
-
-	const refused = await page.evaluate(async (endpoint) => {
-		const response = await fetch(endpoint, {
-			method: "POST",
-			headers: { "content-type": "text/plain" },
-			body: JSON.stringify({ notes: [{ note: "no token" }] }),
-		});
-		return response.status;
-	}, `${at}/batch?token=wrong`);
-	expect("a batch without the token is refused", refused === 401, refused);
-
-	await browser.close();
-	running.server.close();
-	for (const written of running.batches) {
-		rmSync(resolve(stateDir, `batch-${written.id}.json`), { force: true });
-	}
-	if (failures > 0) {
-		console.log(`\n${failures} failure(s)`);
-		process.exit(1);
-	}
-	console.log("\nthe loop holds");
-};
-
 // ------------------------------------------------------------------ dispatch
 
-const [command = "status", ...rest] = process.argv.slice(2);
+// Imported by the repository's tests, which call `serve` themselves; run as a
+// file, it is the CLI the skill drives.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+	const [command = "status", ...rest] = process.argv.slice(2);
 
-if (command === "serve") {
-	await serve();
-} else if (command === "start") {
-	await start();
-} else if (command === "wait") {
-	await wait(rest);
-} else if (command === "report") {
-	await report(rest);
-} else if (command === "status") {
-	await status();
-} else if (command === "stop") {
-	await stop();
-} else if (command === "selftest") {
-	await selftest();
-} else {
-	console.error(usage);
-	process.exit(1);
+	if (command === "serve") {
+		await serve();
+	} else if (command === "start") {
+		await start();
+	} else if (command === "wait") {
+		await wait(rest);
+	} else if (command === "report") {
+		await report(rest);
+	} else if (command === "status") {
+		await status();
+	} else if (command === "stop") {
+		await stop();
+	} else {
+		console.error(usage);
+		process.exit(1);
+	}
 }
